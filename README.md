@@ -10,13 +10,13 @@ Blender add-on for minecraft animations
 
 ## Usage
 
-### General description
+### General usage
 
 First of all you make sure you have the blocks you want to animate
 as seperate objects in your blender file, you can do this using jmc2obj
 or other programs to load data from your minecraft world
 
-Now you can animating!
+Now you can start animating!
 The workflow goes like this: you add your objects to the block array and
 then when ready you click on "Add Keyframes" and it will auto-generate the
 keyframes all by itself
@@ -49,7 +49,7 @@ Here you can change the settings of the item that is currently selected
 
 Here you find 6 buttons to easily automatically add blocks to the array and navigate through them
 When you click on a button it will try to find a block that is next to the currently active block in the specific direction
-*** In order for these buttons to work well blocks should be 1m³ and have there center at x.5 y.5 z.5***
+In order for these buttons to work well blocks should be 1m³ and have there center at x.5 y.5 z.5!
 
 #### Block keyframing
 
