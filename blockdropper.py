@@ -40,7 +40,7 @@ def getFloorPos(obj):
 def lookAndAdd(self, context, positionOffset):
 
     if bpy.context.view_layer.objects.active != None:
-        postion = bpy.context.view_layer.objects.active.location + mathutils.Vector(positionOffset)
+        position = bpy.context.view_layer.objects.active.location + mathutils.Vector(positionOffset)
     else:
         self.report({'WARNING'}, "No active object found")
         return 0
