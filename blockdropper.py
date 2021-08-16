@@ -11,6 +11,31 @@ bl_info = {
     "blender": (2, 93, 1),
     "category": "Animation",
     }
+
+def getDirectionVector(block):
+    direct = mathutils.Vector([0, 0, 0])
+    directionStr = block.direction
+
+
+    if directionStr == "default":
+        directionStr = bpy.context.scene.dropper.defaultDirection
+
+    if block.direction == "X+":
+        direct[0] = 1
+    elif block.direction == "X-":
+        direct[0] = -1
+    elif block.direction == "Y+":
+        direct[1] = 1
+    elif block.direction == "Y-":
+        direct[1] = -1
+    elif block.direction == "Z+":
+        direct[2] = 1
+    elif block.direction == "Z-":
+        direct[2] = -1
+
+    direct *= bpy.context.scene.dropper.height
+
+    return direct
     
     
 def selectedChange(self, context):
@@ -65,9 +90,13 @@ def lookAndAdd(self, context, positionOffset):
         
                 new.delay = prev.delay
                 new.droptime = prev.droptime
+                new.direction = prev.direction
+                new.sense = prev.sense
             except IndexError:
                 new.delay = -1
                 new.droptime = -1
+                new.direction = "default"
+                new.sense = "default"
                 
             new.object = obj
     
@@ -92,11 +121,7 @@ def lookAndAdd(self, context, positionOffset):
         self.report({'WARNING'}, "Could not find any object with that position")
         
 def deleteKeyframes():
-    oldframe = bpy.context.scene.frame_current
-    bpy.context.scene.frame_current = 10000
-    bpy.context.view_layer.update()
     for block in bpy.context.scene.dropper.blocks:
-        
         try:
             obj = block.object
             
@@ -114,11 +139,13 @@ def deleteKeyframes():
             
             keyframeframe = curve.keyframe_points[0].co[0]
             obj.keyframe_delete(data_path = 'location', index = -1, frame = keyframeframe)
+
+            obj.location[0] = obj.dropperLocation.x
+            obj.location[1] = obj.dropperLocation.y
+            obj.location[2] = obj.dropperLocation.z
             
         except (IndexError, AttributeError):
             pass
-        
-    bpy.context.scene.frame_current = oldframe
     
     
 def updateName(self, context):
@@ -148,6 +175,30 @@ class BlockItem(bpy.types.PropertyGroup):
         default = 15,
         update = updateName
         )
+    direction: EnumProperty(
+        name = "Direction",
+        description="Position the block will come from/go to",
+        items=[("X-", "Left(X)","", 0), ("X+", "Right(X)", "", 1), ("Y-", "Left(Y)", "", 2),
+               ("Y+", "Right(Y)", "", 3), ("Z+", "Up(Z)", "", 4), ("Z-", "Down(Z)", "", 5),
+               ("default", "Default", "", 6)],
+        default=4
+        )
+    sense: EnumProperty(
+        name = "Sense",
+        description="Move direction of the block",
+        items=[("to", "To original location", "", 0),
+               ("from", "From original location", "", 1),
+               ("default", "Default", "", 2)],
+        default=0
+        )
+
+class DropperObjectProperties(bpy.types.PropertyGroup):
+    x: FloatProperty(
+        name = "X")
+    y: FloatProperty(
+        name = "Y")
+    z: FloatProperty(
+        name = "Z")
 
 class DropperProperties(bpy.types.PropertyGroup):
     blocks: CollectionProperty(
@@ -174,6 +225,20 @@ class DropperProperties(bpy.types.PropertyGroup):
         default = 30,
         description = "Default droptime that will be used for the blocks that have a droptime of -1,"
         "use this mechanic to make sure you can change the droptime at anytime for a lot of blocks at once"
+        )
+    defaultDirection: EnumProperty(
+        name = "Direction",
+        description="Position the block will come from/go to",
+        items=[("X-", "Left(X)","", 0), ("X+", "Right(X)", "", 1), ("Y-", "Left(Y)", "", 2),
+               ("Y+", "Right(Y)", "", 3), ("Z+", "Up(Z)", "", 4), ("Z-", "Down(Z)", "", 5)],
+        default=4
+        )
+    defaultSense: EnumProperty(
+        name = "Sense",
+        description="Move direction of the block",
+        items=[("to", "To original location", "", 0),
+               ("from", "From original location", "", 1)],
+        default=0
         )
     selected: IntProperty(
         name = "Currently selected item",
@@ -235,6 +300,8 @@ class DropperItemPanel(bpy.types.Panel):
             layout.prop_search(currentItem, "object", context.scene, "objects", icon="MESH_CUBE")
             layout.prop(currentItem, "delay")
             layout.prop(currentItem, "droptime")
+            layout.prop(currentItem, "direction")
+            layout.prop(currentItem, "sense")
         except IndexError:
             pass
         
@@ -362,7 +429,26 @@ class AddBlock(bpy.types.Operator):
     droptime: IntProperty(name = "Droptime")
     useActive: BoolProperty(name = "Use active object")
     object: StringProperty(name = "Object")
-    
+
+    direction: EnumProperty(
+        name = "Direction",
+        description="Position the block will come from/go to",
+        items=[("X-", "Left(X)","", 0), ("X+", "Right(X)", "", 1), ("Y-", "Left(Y)", "", 2),
+               ("Y+", "Right(Y)", "", 3), ("Z+", "Up(Z)", "", 4), ("Z-", "Down(Z)", "", 5),
+               ("default", "Default", "", 6)],
+        default=4
+        )
+
+    sense: EnumProperty(
+        name = "Sense",
+        description="Move direction of the block",
+        items=[("to", "To original location", "", 0),
+               ("from", "From original location", "", 1),
+               ("default", "Default", "", 2)],
+        default=0
+        )
+
+   
     def execute(self, context):
         if self.useActive:
             self.object = bpy.context.view_layer.objects.active.name
@@ -383,6 +469,8 @@ class AddBlock(bpy.types.Operator):
         new.delay = self.delay
         new.object = context.scene.objects[self.object]
         new.droptime = self.droptime
+        new.direction = self.direction
+        new.sense = self.sense
         
         new.name = self.object + ": delay=" + str(self.delay) + ", drop=" + str(self.droptime)
         
@@ -398,9 +486,13 @@ class AddBlock(bpy.types.Operator):
             prev = dropper.blocks[dropper.selected]
             self.delay = prev.delay
             self.droptime = prev.droptime
+            self.direction = prev.direction
+            self.sense = prev.sense
         else:
             self.delay = -1
             self.droptime = -1
+            self.direction = "default"
+            self.sense = "default"
         if bpy.context.view_layer.objects.active != None:
             self.useActive = isNotUsed(bpy.context.view_layer.objects.active.name)
         else:
@@ -412,6 +504,8 @@ class AddBlock(bpy.types.Operator):
         layout = self.layout
         layout.prop(self, "delay")
         layout.prop(self, "droptime")
+        layout.prop(self, "direction")
+        layout.prop(self, "sense")
         if bpy.context.view_layer.objects.active != None and isNotUsed(bpy.context.view_layer.objects.active.name):
             layout.prop(self, "useActive")
         if not self.useActive:
@@ -432,10 +526,6 @@ class RemoveBlock(bpy.types.Operator):
 
         block = dropper.blocks[dropper.selected]
         
-        oldframe = context.scene.frame_current
-        context.scene.frame_current = 10000
-        context.view_layer.update()
-        
         try:
             obj = block.object
             
@@ -453,13 +543,16 @@ class RemoveBlock(bpy.types.Operator):
             
             keyframeframe = curve.keyframe_points[0].co[0]
             obj.keyframe_delete(data_path = 'location', index = -1, frame = keyframeframe)
+
+            obj.location[0] = obj.dropperLocation.x
+            obj.location[1] = obj.dropperLocation.y
+            obj.location[2] = obj.dropperLocation.z
             
         except (IndexError, AttributeError):
             pass
         
-        context.scene.frame_current = oldframe
-        
         dropper.blocks.remove(dropper.selected)
+
         if len(dropper.blocks) == dropper.selected:
             dropper.selected -= 1
             
@@ -480,6 +573,12 @@ class AddBlockKeyframes(bpy.types.Operator):
         
         for block in dropper.blocks:
             obj = block.object
+            loc = obj.location
+
+            obj.dropperLocation.x = loc[0]
+            obj.dropperLocation.y = loc[1]
+            obj.dropperLocation.z = loc[2]
+
             if obj.name in keyframed:
                 deleteKeyframes()
                 self.report({'WARNING'}, "Object " + obj.name + " appears multiple times in the array, this is illegal")
@@ -495,17 +594,32 @@ class AddBlockKeyframes(bpy.types.Operator):
                 delay = dropper.defaultDelay
             
             
-            obj.keyframe_insert(data_path = 'location', frame = frame + droptime)
+            if block.sense == "to":
+                obj.keyframe_insert(data_path = 'location', frame = frame + droptime)
+            else:
+                obj.keyframe_insert(data_path = 'location', frame = frame)
+
+            obj.location += getDirectionVector(block)
             
+            if block.sense == "to":
+                obj.keyframe_insert(data_path = 'location', frame = frame)
+            else:
+                obj.keyframe_insert(data_path = 'location', frame = frame + droptime)
             
-            obj.location[2] += dropper.height
-            obj.keyframe_insert(data_path = 'location', frame = frame)
-            
-            obj.keyframe_insert(data_path = 'hide_render', frame = frame)
-            
-            obj.hide_render = True
-            
-            obj.keyframe_insert(data_path = 'hide_render', frame = frame - 1)
+
+            # Keyframe visibility so that block appears/dissappears when needed
+
+            if block.sense == "to":
+                obj.hide_render = False
+                obj.keyframe_insert(data_path = 'hide_render', frame = frame)
+                obj.hide_render = True
+                obj.keyframe_insert(data_path = 'hide_render', frame = frame - 1)
+            else:
+                obj.hide_render = False
+                obj.keyframe_insert(data_path = 'hide_render', frame = frame + droptime)
+                obj.hide_render = True
+                obj.keyframe_insert(data_path = 'hide_render', frame = frame + droptime + 1)
+
             
             frame += delay
             
@@ -563,9 +677,13 @@ class AutoAddBlock(bpy.types.Operator):
             prev = blocks[dropper.selected]
             new.delay = prev.delay
             new.droptime = prev.droptime
+            new.direction = prev.direction
+            new.sense = prev.sense
         else:
             new.delay = -1
             new.droptime = -1
+            new.direction = "default"
+            new.sense = "default"
             
         new.object = obj
 
@@ -588,7 +706,9 @@ def register():
     bpy.utils.register_class(RemoveBlock)
     bpy.utils.register_class(UpdateBlocks)
     bpy.utils.register_class(BlockItem)
+
     bpy.utils.register_class(DropperProperties)
+    bpy.utils.register_class(DropperObjectProperties)
 
     bpy.utils.register_class(FindActive)
     
@@ -603,6 +723,7 @@ def register():
     bpy.utils.register_class(AutoAddBlock)
 
     bpy.types.Scene.dropper = PointerProperty(type=DropperProperties)
+    bpy.types.Object.dropperLocation = PointerProperty(type=DropperObjectProperties)
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
@@ -622,7 +743,9 @@ def unregister():
     bpy.utils.unregister_class(RemoveBlock)
     bpy.utils.unregister_class(UpdateBlocks)
     bpy.utils.unregister_class(BlockItem)
+
     bpy.utils.unregister_class(DropperProperties)
+    bpy.utils.unregister_class(DropperObjectProperties)
     
     bpy.utils.unregister_class(FindActive)
 
